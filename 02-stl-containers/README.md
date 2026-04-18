@@ -23,6 +23,46 @@ for (auto& [x, y] : pair_vec) { }
 // buffers_t（不是 vector），管理数据块列表
 ```
 
+#### push_back vs emplace_back
+
+**用法区别：`push_back` 传对象，`emplace_back` 传构造参数。**
+
+```cpp
+std::vector<std::string> vs;
+vs.push_back("hello");            // const char* 隐式构造临时 string，再移入
+vs.emplace_back("hello");         // 直接在容器内用 "hello" 构造 string
+
+vs.push_back(std::string("hi"));  // 显式构造对象，再移入
+vs.emplace_back(3, 'a');          // 传构造函数参数，原地构造 "aaa"
+
+// 对复杂类型差异明显
+std::vector<std::pair<int, std::string>> vp;
+vp.push_back(std::make_pair(1, "one"));   // 必须先构造 pair
+vp.emplace_back(2, "two");                // 原地构造 pair(2, "two")
+```
+
+**经验法则：`emplace_back` 传构造参数，`push_back` 传已有对象。**
+
+**`emplace_back` 无法替代 `push_back` 的场景：**
+
+```cpp
+// 1. initializer_list（花括号初始化）
+std::vector<std::vector<int>> vv;
+vv.push_back({1, 2, 3});       // OK
+vv.emplace_back({1, 2, 3});    // 编译错误！花括号无法推导类型
+
+// 2. 已有对象需要拷贝/移动时（语义清晰度）
+std::string s = "hello";
+vs.push_back(s);               // 语义清晰：拷贝 s
+vs.emplace_back(s);            // 行为相同，但语义暗示"原地构造"，容易误导阅读者
+
+// 3. explicit 构造函数保护
+struct Widget { explicit Widget(int); };
+std::vector<Widget> wv;
+wv.push_back(Widget{1});       // 必须显式构造，语义明确
+wv.emplace_back(1);            // 绕过 explicit 检查，可能隐藏 bug
+```
+
 ### 1.2 std::string - 字符串
 
 ```cpp

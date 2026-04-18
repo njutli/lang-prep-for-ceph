@@ -26,7 +26,9 @@ struct ObjectInfo {
 class ObjectIndex {
 private:
     std::map<std::string, ObjectInfo> objects;      // oid -> ObjectInfo
+                                                    // oid 到 ObjectInfo的映射
     std::map<std::string, std::vector<std::string>> locator_index;  // locator -> [oids]
+                                                                    // locator 到 oid 列表的映射
     
 public:
     // 创建对象
