@@ -60,6 +60,19 @@ public:
     }
     
     // 移动构造
+    // noexcept: 告诉编译器此函数保证不抛异常。移动只做指针转移，不涉及内存分配，确实不会抛异常。
+    // 为什么重要：std::vector 扩容时需要搬运元素，如果移动构造是 noexcept，vector 用移动；
+    //   否则 vector 回退到拷贝。因为移动中途抛异常会丢数据（原对象已被修改），拷贝抛异常则原对象还完好。
+    //
+    //   vector 扩容过程：
+    //   1. 分配更大的新内存
+    //   2. 把元素从旧内存搬到新内存（移动或拷贝）
+    //   3. 析构旧内存中的对象 ← 旧对象在这里被销毁
+    //   4. 释放旧内存
+    //
+    //   移动扩容：新对象直接拿走旧对象的指针，旧对象 data 置 nullptr，
+    //            然后析构旧对象（delete[] nullptr 无操作）——不存在共享资源问题
+    //   拷贝扩容：每个新对象 new 一份内存拷贝内容，然后 delete[] 旧对象的内存——有额外开销
     MyString(MyString&& other) noexcept 
         : data(other.data), length(other.length) {
         other.data = nullptr;
@@ -67,7 +80,7 @@ public:
         std::cout << "移动构造\n";
     }
     
-    // 移动赋值
+    // 移动赋值（同理 noexcept）
     MyString& operator=(MyString&& other) noexcept {
         if (this != &other) {
             delete[] data;
