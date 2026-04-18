@@ -32,7 +32,7 @@ struct Object : public boost::intrusive::list_base_hook<> {
 
 boost::intrusive::list<Object> obj_list;
 
-// Ceph: src/include/RefCountedObj.h 使用 intrusive_ptr
+// Ceph: src/common/RefCountedObj.h 使用 intrusive_ptr
 // intrusive_ptr：引用计数嵌入对象内部，避免shared_ptr的额外开销
 ```
 
@@ -57,7 +57,7 @@ void intrusive_ptr_release(RefCounted* p) { p->release(); }
 
 boost::intrusive_ptr<RefCounted> ptr(new RefCounted());
 
-// Ceph: src/include/RefCountedObj.h 是类似实现
+// Ceph: src/common/RefCountedObj.h 是类似实现
 ```
 
 ## 4. Boost.Asio（异步IO）
@@ -80,8 +80,8 @@ void session(tcp::socket sock) {
     }
 }
 
-// Ceph: 旧版Messenger使用Asio
-// 新版Crimson使用Seastar（更高性能）
+// Ceph: 经典版 Messenger (src/msg/async/) 使用 Boost.Asio
+// 新版 Crimson (src/crimson/) 使用 Seastar（更高性能）
 ```
 
 ## 5. Boost.Format
@@ -167,7 +167,7 @@ if (vm.count("help")) {
 ```
 src/common/config.h               # boost::variant/std::variant
 src/osd/osd_types.h               # boost::container::small_vector
-src/include/RefCountedObj.h       # intrusive_ptr模式
+src/common/RefCountedObj.h        # intrusive_ptr模式
 src/msg/async/AsyncMessenger.cc   # boost::asio (经典版)
 ```
 

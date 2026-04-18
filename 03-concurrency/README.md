@@ -129,7 +129,8 @@ counter.store(10);          // 原子写入
 int expected = 10;
 bool success = counter.compare_exchange_strong(expected, 20);
 
-// Ceph: src/include/RefCountedObj.h 使用atomic实现引用计数
+// Ceph: src/common/RefCountedObj.h 使用atomic实现引用计数
+// 实际类型是 std::atomic<uint64_t> nref{1}
 ```
 
 ## 5. 线程安全设计模式
@@ -619,43 +620,46 @@ std::atomic_thread_fence(std::memory_order_seq_cst);
 ### 13.1 引用计数（RefCounted）
 
 ```cpp
-// src/include/RefCountedObj.h
+// src/common/RefCountedObj.h — Ceph引用计数基类（简化）
 class RefCountedObject {
-    std::atomic<int> ref{0};
-    
+    mutable std::atomic<uint64_t> nref{1};  // 注意：uint64_t，不是 int
+
 public:
-    void get() {
-        ref.fetch_add(1, std::memory_order_relaxed);
-    }
-    
-    void put() {
-        if (ref.fetch_sub(1, std::memory_order_release) == 1) {
-            // 最后一个引用，释放对象
-            std::atomic_thread_fence(std::memory_order_acquire);
-            delete this;
-        }
-    }
+    const RefCountedObject *get() const { _get(); return this; }
+    RefCountedObject *get() { _get(); return this; }
+    void put() const;  // _get() 和 put() 在 .cc 文件中实现
+private:
+    void _get() const { nref.fetch_add(1, std::memory_order_relaxed); }
 };
+// put() 内部：nref.fetch_sub(1, memory_order_acq_rel)，如果归零则 delete this
 ```
 
-### 13.2 无锁队列
+### 13.2 条件变量+互斥锁队列（非无锁）
 
 ```cpp
-// src/common/Finisher.h - 异步完成任务队列
-// WorkQueue使用类似的队列机制
+// src/common/Finisher.h — 异步完成任务队列
+// 注意：这不是无锁队列！它使用 mutex + condition_variable
+class Finisher {
+    ceph::mutex finisher_lock;
+    ceph::condition_variable finisher_cond;
+    std::vector<Context*> finisher_queue;  // 用 vector 存任务
+    // ...
+};
 
-// MCPSC (Multiple Consumer Single Producer) 模式
-// 或 SPSC (Single Producer Single Consumer) 模式
+// Ceph 中真正的 atomic 操作见：
+// - ceph::atomic<T>（src/include/ceph_assert.h 中定义）
+// - buffer::raw::nref（引用计数，src/include/buffer_raw.h）
 ```
 
-### 13.3 Seastar的无锁设计
+### 13.3 Crimson的share-nothing设计
 
 ```cpp
-// src/seastar/ 使用share-nothing设计
-// 每个核心有自己的内存区域，不需要锁
-
-// 核心间通过消息传递通信
-// 而不是共享内存+锁
+// Ceph 的 Crimson（下一代 OSD 前端）基于 Seastar 框架
+// 采用 share-nothing 设计：每个核心有自己的内存区域，不需要锁
+// 核心间通过消息传递通信，而不是共享内存+锁
+//
+// 源码位置：src/crimson/ （不是 src/seastar/）
+// Seastar 是外部依赖，Ceph 通过 Crimson 适配层使用它
 ```
 
 ## 14. 无锁编程注意事项
@@ -741,11 +745,10 @@ void stress_test() {
 ```
 src/common/ceph_mutex.h          # Ceph锁封装
 src/common/Thread.h              # 线程封装
-src/include/RefCountedObj.h      # 原子引用计数（无锁）
-src/common/Finisher.h            # 异步完成队列
+src/common/RefCountedObj.h       # 原子引用计数（std::atomic<uint64_t>）
+src/common/Finisher.h            # 异步完成队列（mutex+condvar，非无锁）
 
 # 无锁相关
-src/include/ceph_atomic.h        # 原子操作封装
-src/os/bluestore/Allocator.h     # 可能有无锁内存分配
-src/seastar/                     # Seastar大量使用无锁设计
+src/include/buffer_raw.h         # buffer::raw::nref 原子引用计数
+src/crimson/                     # Crimson: share-nothing无锁设计
 ```

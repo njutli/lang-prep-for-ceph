@@ -191,7 +191,7 @@ Seastar使用无锁数据结构和无共享架构：
 src/crimson/                    # Crimson OSD（使用Seastar）
 src/crimson/os/alienstore/      # 与经典OSD交互
 src/crimson/net/                # 网络层
-src/seastar/                    # Seastar副本
+src/crimson/                    # Crimson: Ceph的Seastar前端
 ```
 
 ## 建议阅读顺序

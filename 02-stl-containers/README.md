@@ -19,8 +19,8 @@ for (size_t i = 0; i < vec.size(); ++i) { }
 // C++17结构化绑定
 for (auto& [x, y] : pair_vec) { }
 
-// Ceph示例: src/include/buffer.h
-// bufferlist使用vector-like结构管理数据块
+// Ceph: src/include/buffer.h — buffer::list 内部使用自定义单向链表
+// buffers_t（不是 vector），管理数据块列表
 ```
 
 ### 1.2 std::string - 字符串
@@ -83,8 +83,9 @@ orders.find("key");             // 返回迭代器
 std::unordered_map<int, std::string> hashmap;
 hashmap[1] = "one";
 
-// Ceph示例: src/osdc/Objecter.h
-// 使用map管理object操作
+// Ceph示例: src/osdc/Objecter.h — 使用 map 管理对象操作
+// std::map<ceph_tid_t, Op*> ops;
+// std::map<uint64_t, LingerOp*> linger_ops;
 ```
 
 ### 2.2 std::set / std::unordered_set
@@ -189,7 +190,7 @@ auto f5 = [&](int x) { return x + y; };      // 全部引用捕获
 ## Ceph源码阅读建议
 
 ```
-src/include/buffer.h         # bufferlist/bufferptr实现
-src/include/unordered_map    # 自定义hash容器
-src/osd/OSDMap.h             # 大量使用map存储集群状态
+src/include/buffer.h         # bufferlist/bufferptr实现（自定义单向链表）
+src/osdc/Objecter.h           # map管理对象操作的典型用法
+src/osd/OSDMap.h              # 大量使用map存储集群状态（mempool::osdmap::map）
 ```

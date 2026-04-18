@@ -38,9 +38,8 @@ public:
 // 模板参数推导（C++17）
 FixedArray<int, 10> arr;
 
-// Ceph示例: src/include/buffer.h 的 bufferlist
-template<typename T>
-class bufferlist_template { ... };
+// Ceph示例: src/include/buffer.h — buffer::list 的编码系统大量使用模板
+// encode<T>(const T& v, bufferlist& bl) 对不同类型进行序列化
 ```
 
 ## 3. 模板参数

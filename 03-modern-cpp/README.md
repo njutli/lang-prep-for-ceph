@@ -185,12 +185,17 @@ using Callback = void(*)(int, int);
 ### 6.2 Ceph中的例子
 
 ```cpp
-// src/include/buffer.h
+// src/include/buffer_fwd.h（不是 buffer.h）
 using bufferptr = buffer::ptr;
 using bufferlist = buffer::list;
 
-// 定义类型更清晰
-using OSDMapRef = ceph::ref_t<OSDMap>;
+// 定义类型更清晰——OSDMapRef 实际定义（src/osd/OSDMap.h）
+#ifdef WITH_CRIMSON
+using OSDMapRef = crimson::local_shared_foreign_ptr<LocalOSDMapRef>;
+#else
+using OSDMapRef = std::shared_ptr<const OSDMap>;  // 大部分情况是这个
+#endif
+// 注意：不是 ceph::ref_t<OSDMap>，ref_t 是 intrusive_ptr 的别名
 ```
 
 ## 7. emplace_back
