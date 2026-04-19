@@ -55,12 +55,14 @@ Ceph不是单机文件系统，它有：
 00-user-space-mindset/  ← 异步/状态机思维（新增）
 01-cpp-foundation/      ← 从C到C++过渡
 02-stl-containers/      ← STL标准库
-03-modern-cpp/          ← 现代C++特性（新增）
-04-concurrency-async/   ← 并发+异步（重点）
-05-python-basics/       ← Python（升级为P0）
-06-shell-basics/        ← Shell脚本（新增）
-07-templates-advanced/   ← 模板阅读能力
-08-ceph-code-path/       ← Ceph源码实战（新增）
+03-concurrency/         ← 并发基础（重点）
+04-modern-cpp/          ← 现代C++特性（新增）
+05-templates-advanced/   ← 模板阅读能力
+06-boost-library/        ← Boost/Seastar
+07-async-programming/    ← 异步编程
+08-shell-basics/        ← Shell脚本（新增）
+09-python-basics/       ← Python（升级为P0）
+10-ceph-code-path/       ← Ceph源码实战（新增）
 ```
 
 ## Ceph 入门代码路径
