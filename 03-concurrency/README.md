@@ -50,6 +50,44 @@ public:
 // Ceph: src/common/ceph_mutex.h 定义了多种锁类型
 ```
 
+#### 为什么用 lock_guard 而不是 mtx.lock()？
+
+**核心原因：异常安全和防遗忘。**
+
+```cpp
+// 危险写法：手动 lock/unlock
+void bad() {
+    mtx.lock();
+    if (error) return;          // BUG！忘记 unlock，死锁
+    do_something();             // 如果抛异常，也死锁
+    mtx.unlock();
+}
+
+// 正确写法：lock_guard（RAII）
+void good() {
+    std::lock_guard<std::mutex> lock(mtx);  // 构造时 lock
+    if (error) return;          // ✅ 析构自动 unlock
+    do_something();             // ✅ 抛异常也自动 unlock
+}                               // ✅ 离开作用域自动 unlock
+```
+
+**常见疑问：多次调用 push_back 会不会因锁未释放而卡住？**
+
+**不会。`lock_guard` 的生命周期是函数调用，不是对象生命周期。**
+
+```cpp
+ThreadSafeVector vec;
+vec.push_back(1);  // 创建 lock → 加锁 → push → lock 析构 → 解锁
+vec.push_back(2);  // 创建新的 lock → 加锁 → push → lock 析构 → 解锁
+vec.push_back(3);  // 同上，每次都是独立的 lock 对象
+```
+
+- `lock` 是 `push_back` 的**局部变量**，不是 `ThreadSafeVector` 的成员
+- 每次调用都会创建新的 `lock_guard`，函数返回时它就析构了
+- `vec` 对象没销毁 ≠ `lock` 没销毁，`lock` 在函数结束时就死了
+
+**Ceph 源码中几乎全部使用 `lock_guard`（或封装的 `ceph::lock_guard`），极少直接调用 `lock()`/`unlock()`。**
+
 ### 2.2 std::unique_lock（更灵活）
 
 ```cpp
