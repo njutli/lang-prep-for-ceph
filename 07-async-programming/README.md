@@ -1,208 +1,91 @@
-# 阶段六：异步编程（Seastar框架）
+# 阶段七：异步编程（Seastar框架与 Ceph 架构）
 
-Ceph的新一代存储引擎Crimson使用Seastar框架实现高性能异步IO。
+## 🛑 初学者必读：现在需要学 Seastar 吗？
 
-## 1. 同步 vs 异步
+**结论：初步学习阶段，完全不需要。**
 
-```cpp
-// 同步代码：阻塞等待
-std::string read_file(const std::string& path) {
-    std::ifstream file(path);
-    std::string content((std::istreambuf_iterator<char>(file)), 
-                         std::istreambuf_iterator<char>());
-    return content;  // 读取完成前线程被阻塞
-}
+在阅读 Ceph 源码的初期，你应该**跳过** Seastar，直接将精力集中在**经典架构 (Classic OSD)** 上。
 
-// 异步代码：非阻塞，继续其他工作
-future<std::string> read_file_async(const std::string& path);
-```
+| 架构 | 所在目录 | 技术栈 | 推荐 |
+| :--- | :--- | :--- | :--- |
+| **经典 OSD (Mainline)** | `src/osd/` | `std::thread` + `Boost.Asio` + `Coroutines` (C++20) | ✅ **重点学习** (生产环境主流) |
+| **Crimson (新一代)** | `src/crimson/` | **Seastar 框架** (Reactor 模型) | ⏳ 后期/高级选读 |
 
-## 2. Future/Promise模式
+**为什么不用急着学 Seastar？**
+1.  **业务逻辑相通**：无论是经典版还是 Crimson，Ceph 核心的 CRUSH 算法、PG 状态机、数据恢复流程是通用的。
+2.  **难度陡峭**：Seastar 使用了大量的模板元编程、无锁数据结构和特殊的内存管理。初学者容易迷失在框架实现中，反而忽略了 OSD 业务代码本身的逻辑。
+3.  **Ceph 还在过渡中**：虽然 Crimson 是未来，但绝大多数现网集群依然运行的是经典 OSD。
 
-```cpp
-#include <future>
+> **建议**：只要掌握了前一章的 **Boost.Asio 异步模型**（回调、Proactor 模式）和 **多线程并发基础**，你就足以理解 Ceph 网络层和大多数业务逻辑了。
 
-// std::future (C++11)
-std::future<int> compute_async() {
-    return std::async([] { 
-        // 耗时计算
-        return 42; 
-    });
-}
+---
 
-auto f = compute_async();
-// 做其他事情...
-int result = f.get();  // 阻塞等待结果
+Ceph 的架构师正在尝试将 **Seastar** 引入 Ceph，以利用其单核极致性能。理解它有助于你理解 Ceph 在网络和存储 IO 上的优化方向。本章重点结合代码实例，解释 Seastar 与传统异步编程的区别。
 
-// Seastar的future更强大：
-// seastar::future<int> f = read_file(...).then([](std::string s) { ... });
-```
+## 1. Seastar vs. 传统并发模型
 
-## 3. 回调模式（传统异步）
+Seastar 不仅仅是一个库，它是一种全新的**并发架构**。
 
-```cpp
-// Ceph经典版使用回调
-void read_object(Completion* cb) {
-    // 发起异步读取
-    // ...
-    // 完成后调用 cb->complete()
-}
+| 特性 | 传统模型 (POSIX Threads) | Seastar 模型 (Crimson) |
+| :--- | :--- | :--- |
+| **架构** | **Thread-per-Connection**: 每个请求一个线程，共享内存。 | **Reactor-per-Core**: 每个 CPU 核心一个独立线程，**内存隔离** (Shared-Nothing)。 |
+| **竞争** | **高锁竞争**: 必须使用 `std::mutex` 保护共享数据。 | **无锁 (Lock-free)**: 每个核心的数据互不干扰，**不需要 Mutex**。 |
+| **通信** | 全局共享内存。 | 核间通信通过**队列** (Queue) 传递消息，避免数据竞争。 |
+| **IO 模式** | 阻塞调用 (`read/write`) 依赖系统调用。 | 异步轮询 (`polling`) + 异步回调 (`.then()`)，极致利用硬件带宽。 |
 
-// 缺点：回调地狱
-read_object(new Completion([]{
-    write_object(new Completion([]{
-        sync_object(new Completion([]{
-            // 越来越深的嵌套...
-        }));
-    }));
-}));
-```
+---
 
-## 4. 链式Future（Seastar风格）
+## 2. 核心代码模式分析
+
+请参考子目录下的完整源码：`exercises/seastar_examples.cpp`。即使无法编译，阅读代码也能帮助你理解其编程范式。
+
+### 2.1 Reactor 循环 (The Event Loop)
+
+在传统程序中，`main` 函数线性执行。而在 Seastar 中，程序的入口 `main` 只是用来配置环境，真正的核心是 **App.run** 启动的事件循环。
 
 ```cpp
-// Seastar使用then链式调用
-future<int> process() {
-    return read_file("data.txt").then([](std::string content) {
-        return parse_content(content);
-    }).then([](ParsedData data) {
-        return process_data(data);
-    }).then([](Result result) {
-        return result.value;
-    });
-}
-
-// 每个then返回新的future，形成链
-// 没有回调地狱，代码线性
-```
-
-## 5. 协程（C++20）
-
-```cpp
-#include <coroutine>
-#include <cppcoro/task.hpp>
-
-// 使用co_await的协程写法（更直观）
-cppcoro::task<int> process_coro() {
-    auto content = co_await read_file_async("data.txt");
-    auto data = co_await parse_content_async(content);
-    auto result = co_await process_data_async(data);
-    co_return result.value;
-}
-
-// Seastar不使用C++20协程，有自己的实现
-// 但概念相通
-```
-
-## 6. Seastar基础示例
-
-```cpp
-// Seastar示例（概念性，需要seastar库）
-#include <seastar/core/app-template.hh>
-#include <seastar/core/future.hh>
-#include <seastar/core/sleep.hh>
-
-using namespace seastar;
-
-future<> process_request() {
-    // 异步睡眠
-    return sleep(std::chrono::seconds(1)).then([] {
-        std::cout << "Processed after 1 second\n";
-        return make_ready_future<>();
-    });
-}
-
+// 对应 exercises/seastar_examples.cpp -> main()
 int main(int argc, char** argv) {
     app_template app;
-    app.run(argc, argv, [] {
-        return process_request();
-    });
-    return 0;
+    // run() 会接管当前线程，进入死循环 (Event Loop)，直到所有任务完成
+    return app.run(argc, argv, &run_app); 
 }
 ```
+*   **为什么不能阻塞？**
+    由于每个核心只有一个循环，如果你在回调中调用阻塞函数（如 `std::this_thread::sleep` 或读取大文件），整个 CPU 核心上的所有请求都会停摆（Starvation）。
 
-## 7. 关键概念
+### 2.2 Future 链 (Pipeline)
 
-### continuation（延续）
+这是 Seastar 业务逻辑的写法。因为不能阻塞，所以必须通过返回 `future<>` 并在其上注册 `.then()` 来表达逻辑的先后关系。
 
-```cpp
-// continuation是then注册的回调
-// future准备好时自动执行
+*   **代码分析**: `exercises/seastar_examples.cpp#demo_chain`
+    *   `read_object_from_disk` 立即返回一个未完成的 future。
+    *   随后 `.then()` 注册了回调函数（Continuation）。当磁盘 IO 完成后，Seastar Scheduler 会自动在**同一个 Reactor 线程**中执行 `.then` 中的闭包。
+    *   **对比**: 传统 C++11 `std::async` 通常返回一个 `std::future`，然后你需要调用 `.get()` (这将阻塞) 来获取结果；而 Seastar 永远**不要调用 .get()**。
 
-future<int> f = async_operation();
-future<std::string> f2 = f.then([](int i) {
-    return std::to_string(i);  // continuation
-});
-```
+### 2.3 Sharded (分布式/分片服务)
 
-### 异常处理
+这是阅读 Ceph Crimson 源码的关键。在 Crimson 中，PG 和 OSD 往往不是单个对象，而是分布在各个 CPU 核心上的。
 
-```cpp
-future<int> f = risky_operation()
-    .then([](int x) { return x * 2; })
-    .handle_exception([](std::exception_ptr e) {
-        return -1;  // 异常时返回默认值
-    });
-```
+*   **代码分析**: `exercises/seastar_examples.cpp#demo_sharding`
+    *   `sharded<PerfCounter>` 是 Seastar 提供的分片容器。
+    *   当你调用 `counters.start()` 时，Seastar 会在每个 CPU 核上都实例化一个 `PerfCounter`。
+    *   **invoke_on_all**: 这是一个广播操作。它会向所有核发送消息，让它们各自执行传入的 lambda。
+    *   **意义**: 通过分片，原本需要锁保护的 `PerfCounter.count` 变成了每个核的局部变量，彻底消除了锁竞争。
 
-### 并行执行
+### 2.4 Semaphore (流量控制)
 
-```cpp
-// 当所有完成时返回
-future<> all = when_all(
-    operation1(),
-    operation2(),
-    operation3()
-).then([](auto results) {
-    // 所有结果就绪
-});
+因为不能用 Mutex，Seastar 提供了非阻塞的 **信号量 (Semaphore)**。
 
-// 任一完成时返回
-future<> any = when_any(
-    operation1(),
-    operation2()
-).then([](auto result) {
-    // 至少一个完成
-});
-```
+*   **代码分析**: `exercises/seastar_examples.cpp#demo_semaphore`
+    *   当资源不足时，`semaphore::wait` 返回一个 pending 的 future，任务挂起，线程去处理其他请求。
+    *   这与操作系统的信号量不同，它纯粹是**用户态**的调度机制，没有上下文切换的开销。
 
-## 8. 内存管理
+---
 
-Seastar使用无锁数据结构和无共享架构：
+## 3. 总结
 
-```cpp
-// 每个CPU核心独立处理
-// 数据按核心分片，避免锁竞争
-
-// reactor-per-core模式
-// 每个核心有自己的事件循环
-```
-
-## 学习路径
-
-1. **理解异步概念**：阻塞vs非阻塞，同步vs异步
-2. **学习Future/Promise**：C++11 `std::future`
-3. **协程概念**：C++20协程（可选）
-4. **阅读Seastar文档**：[seastar.io](http://seastar.io)
-
-## Ceph源码位置
-
-```
-src/crimson/                    # Crimson OSD（使用Seastar）
-src/crimson/os/alienstore/      # 与经典OSD交互
-src/crimson/net/                # 网络层
-src/crimson/                    # Crimson: Ceph的Seastar前端
-```
-
-## 建议阅读顺序
-
-1. Seastar教程(http://seastar.io/tutorial.html)
-2. `src/crimson/osd/osd_operations.h` - OSD操作定义
-3. `src/crimson/osd/pg.h` - Placement Group实现
-4. 理解Seastar的future/continuation模型后再深入
-
-## 注意
-
-- Seastar是Ceph新组件，经典OSD仍用传统异步（回调+线程池）
-- 学习Seastar是**可选的**，主要在阅读Crimson代码时需要
-- 可以先专注于经典Ceph代码，后期再学Seastar
+在（未来的）阅读 `src/crimson` 源码时，你需要完成思维转换：
+1.  看到 `future<T>`，意识到这是一个**承诺**，会在未来的某个时刻完成，而不是当前的计算结果。
+2.  看到 `seastar::sharded`，意识到这是一个**多核并行**的实体，而不是单例。
+3.  看到 `co_await` (C++20)，意识到它是 `.then()` 的语法糖，虽然写法像同步，但底层依然是异步非阻塞的。
