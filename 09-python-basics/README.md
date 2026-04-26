@@ -1,6 +1,23 @@
-# 阶段七：Python基础（可选）
+# 阶段九：Python基础（辅助工具）
 
-Python主要用于Ceph的管理工具、测试脚本和mgr模块。
+## 🛑 初学者必读：Python 要学到什么程度？
+
+**结论：初步学习 Ceph 核心源码时，几乎不需要掌握 Python。**
+
+Ceph 的核心逻辑（OSD、MON、MDS、CRUSH）全部由 **C++** 编写。Python 在 Ceph 中仅用于管理工具、测试脚本和 Dashboard 模块。
+
+| 学习目标 | 所需 Python 程度 | 推荐 |
+| :--- | :--- | :--- |
+| **只读 C++ 核心源码** | **入门**：能看懂变量、循环、`print` 即可 | ✅ 够用 |
+| **看懂构建/测试脚本** | **基础**：理解 `subprocess`、`with` 语句 | ✅ 够用 |
+| **研究 Mgr/Dashboard** | **进阶**：装饰器、`asyncio`、`rados` 绑定 | ⏳ 按需学习 |
+
+> **版本建议**：直接学习 **Python 3.6+**（Ceph 早已彻底废弃 Python 2）。
+> **建议**：不要为了读 Ceph 源码去系统学习 Python。遇到看不懂的脚本，查一下语法即可。
+
+---
+
+Python 主要用于 Ceph 的管理工具、测试脚本和 mgr 模块。
 
 ## 1. Python基础语法
 
